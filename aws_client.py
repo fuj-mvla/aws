@@ -1,6 +1,7 @@
 import traceback
 import json
 import time
+from io import BytesIO
 import boto3
 
 
@@ -113,37 +114,72 @@ class AWSClient(object):
         '''
         try:
             reported = self.get_thing_reported(self.client, device_id)
-            response_payload = self.generate_payload(device_id)
+            value = int(value)
+
             if reported[field] != value:
-                response_payload['state']['reported'][field] = value
-                self.publish_payload(self.logger, self.client, device_id, response_payload)
-            time.sleep(3)
-            response_payload['state']['reported'][field] = 0
-            self.publish_payload(self.logger, self.client, device_id, response_payload)
+                response_payload = {
+                    "state": {
+                        "desired": {
+                            field: value
+                        }
+                    }
+                }
+                self.logger.info(f'{device_id}: updating fan speed to: {value}')
+                payload = self.generate_encoded(response_payload)
+                self.publish_payload(self.logger, self.client, device_id, payload)
+                time.sleep(2)
+                reported = self.get_thing_reported(self.client, device_id)
+                retrycount = 0
+                while reported[field] != value and retrycount < 3:
+                    self.logger.info(f"{device_id}: Fan speed not updated to {value}, trying again")
+                    self.publish_payload(self.logger, self.client, device_id, payload)
+                    reported = self.get_thing_reported(self.client, device_id)
+                    retrycount += 1
+
+            self.logger.info(f'{device_id}: updated fan speed to: {value}')
+            time.sleep(2)
+            response_payload = {
+                "state": {
+                    "desired": {
+                        field: 0
+                    }
+                }
+            }
+            self.logger.info(f'{device_id}: updating fan speed to: 0')
+            payload = self.generate_encoded(response_payload)
+            self.publish_payload(self.logger, self.client, device_id, payload)
+            time.sleep(2)
+            reported = self.get_thing_reported(self.client, device_id)
+            retrycount = 0
+            while reported[field] != 0 and retrycount < 3:
+                self.logger.info(f"{device_id}: Fan speed not updated to 0, trying again")
+                self.publish_payload(self.logger, self.client, device_id, payload)
+                reported = self.get_thing_reported(self.client, device_id)
+                retrycount +=1
+            self.logger.info(f"{device_id}: updated fan speed to 0")
         except Exception:
             self.logger.exception(f"{device_id}: Exception occurred while trying to update fan speed ")
             traceback.print_exc()
             return False
-
         return True
 
-    def generate_payload(self,device_id):
-        response = self.client.get_thing_shadow(
-            thingName=device_id
-        )
-        state = response['payload'].read().decode('utf-8')
-        response_payload = json.loads(state)
-        return response_payload
+
+
+    def generate_encoded(self, response_payload):
+        body_encoded = json.dumps(response_payload).encode('utf-8')
+        return BytesIO(body_encoded)
 
     def run_client(self, devices, field, value):
         is_init = self.is_init()
         if not is_init:
             self.logger.info('aws client is not initialized')
             return
+        self.logger.info("AWS client initialized")
         for device_id in devices:
             if not self.is_connected(device_id):
                 self.logger.info(f'{device_id}: device is disconnected')
                 continue
+            self.logger.info(f"{device_id}: is connected")
             res = self.update_fan_speed(device_id, field, value)
             self.logger.info(f'update status of {device_id}: {res}')
         self.logger.info('done.')
