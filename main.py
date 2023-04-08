@@ -40,27 +40,16 @@ if __name__ == '__main__':
             devices = config.get('devices')
 
             parser = argparse.ArgumentParser()
-            parser.add_argument('--fan', required=True, default=0)
+            parser.add_argument('--fan', required=False)
+            parser.add_argument('--status', required=False)
             args = parser.parse_args()
-            value = args.fan
-
             aws_client = AWSClient(root_logger)
-            aws_client.run_client(devices, FAN, value)
+            value = args.fan
+            status = args.status
+            aws_client.run_client(devices, FAN, value, status)
+
+
+
         except Exception:
             root_logger.exception('exception occurs during execution')
             traceback.print_exc()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

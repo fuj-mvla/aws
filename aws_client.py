@@ -31,6 +31,17 @@ class AWSClient(object):
         return reported
 
     @staticmethod
+    def get_doc(field, value):
+        doc = {
+            "state": {
+                "desired": {
+                    field: value
+                }
+            }
+        }
+        return doc
+
+    @staticmethod
     def publish_payload(logger, client, device_id, payload):
         '''
         :param client:
@@ -55,6 +66,11 @@ class AWSClient(object):
             traceback.print_exc()
             return False
         return True
+
+    @staticmethod
+    def generate_encoded(response_payload):
+        body_encoded = json.dumps(response_payload).encode('utf-8')
+        return BytesIO(body_encoded)
 
     def is_init(self):
         '''
@@ -117,13 +133,7 @@ class AWSClient(object):
             value = int(value)
 
             if reported[field] != value:
-                response_payload = {
-                    "state": {
-                        "desired": {
-                            field: value
-                        }
-                    }
-                }
+                response_payload = self.get_doc(field, value)
                 self.logger.info(f'{device_id}: updating fan speed to: {value}')
                 payload = self.generate_encoded(response_payload)
                 self.publish_payload(self.logger, self.client, device_id, payload)
@@ -131,20 +141,17 @@ class AWSClient(object):
                 reported = self.get_thing_reported(self.client, device_id)
                 retrycount = 0
                 while reported[field] != value and retrycount < 3:
-                    self.logger.info(f"{device_id}: Fan speed not updated to {value}, trying again")
+                    self.logger.info(f"{device_id}: Fan speed not updated to {value}, trying again. "
+                                     f"Attempt: {retrycount}")
                     self.publish_payload(self.logger, self.client, device_id, payload)
                     reported = self.get_thing_reported(self.client, device_id)
                     retrycount += 1
-
+                if reported[field] != value:
+                    self.logger.info(f"{device_id}: Fan speed has not been updated, terminating program")
+                    return False
             self.logger.info(f'{device_id}: updated fan speed to: {value}')
             time.sleep(2)
-            response_payload = {
-                "state": {
-                    "desired": {
-                        field: 0
-                    }
-                }
-            }
+            response_payload = self.get_doc(field, 0)
             self.logger.info(f'{device_id}: updating fan speed to: 0')
             payload = self.generate_encoded(response_payload)
             self.publish_payload(self.logger, self.client, device_id, payload)
@@ -152,10 +159,15 @@ class AWSClient(object):
             reported = self.get_thing_reported(self.client, device_id)
             retrycount = 0
             while reported[field] != 0 and retrycount < 3:
-                self.logger.info(f"{device_id}: Fan speed not updated to 0, trying again")
+                self.logger.info(f"{device_id}: Fan speed not updated to 0, trying again. Attempt: {retrycount}")
                 self.publish_payload(self.logger, self.client, device_id, payload)
                 reported = self.get_thing_reported(self.client, device_id)
-                retrycount +=1
+                retrycount += 1
+
+            if reported[field] != 0:
+                self.logger.info(f"{device_id}: Fan speed has not been updated, terminating program")
+                return False
+
             self.logger.info(f"{device_id}: updated fan speed to 0")
         except Exception:
             self.logger.exception(f"{device_id}: Exception occurred while trying to update fan speed ")
@@ -163,22 +175,37 @@ class AWSClient(object):
             return False
         return True
 
+    def connection_check(self, devices, value, status):
+        connection_status = {}
+        try:
+            if value is None and status is not None:
+                for device_id in devices:
+                    connection_status[device_id] = self.is_connected(device_id)
+                self.logger.info(f'connection status of devices {connection_status}')
+                return False
+            elif status is None and value is None:
+                self.logger.info("missing parameters for fan speed or status check, exiting script")
+                return False
+        except Exception:
+            self.logger.info("error while trying to retrieve connection")
+            traceback.print_exc()
+            return False
+        return True
 
 
-    def generate_encoded(self, response_payload):
-        body_encoded = json.dumps(response_payload).encode('utf-8')
-        return BytesIO(body_encoded)
-
-    def run_client(self, devices, field, value):
+    def run_client(self, devices, field, value, status):
         is_init = self.is_init()
         if not is_init:
             self.logger.info('aws client is not initialized')
             return
         self.logger.info("AWS client initialized")
+        if not self.connection_check(devices, value, status):
+            return
         for device_id in devices:
             if not self.is_connected(device_id):
                 self.logger.info(f'{device_id}: device is disconnected')
                 continue
+
             self.logger.info(f"{device_id}: is connected")
             res = self.update_fan_speed(device_id, field, value)
             self.logger.info(f'update status of {device_id}: {res}')
