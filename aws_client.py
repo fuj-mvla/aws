@@ -178,20 +178,13 @@ class AWSClient(object):
     def connection_check(self, devices, value, status):
         connection_status = {}
         try:
-            if value is None and status is not None:
+            if status:
                 for device_id in devices:
                     connection_status[device_id] = self.is_connected(device_id)
                 self.logger.info(f'connection status of devices {connection_status}')
-                return False
-            elif status is None and value is None:
-                self.logger.info("missing parameters for fan speed or status check, exiting script")
-                return False
         except Exception:
             self.logger.info("error while trying to retrieve connection")
             traceback.print_exc()
-            return False
-        return True
-
 
     def run_client(self, devices, field, value, status):
         is_init = self.is_init()
@@ -199,7 +192,9 @@ class AWSClient(object):
             self.logger.info('aws client is not initialized')
             return
         self.logger.info("AWS client initialized")
-        if not self.connection_check(devices, value, status):
+        if status:
+            self.connection_check(devices, value, status)
+            self.logger.info('done.')
             return
         for device_id in devices:
             if not self.is_connected(device_id):

@@ -2,8 +2,12 @@
 
 # Press Shift+F10 to execute it or replace it with your code.
 # Press Double Shift to search everywhere for classes, files, tool windows, actions, and settings.F
-
+import tkinter
+from tkinter import *
+from tkinter import ttk
+import asyncio
 import logging
+from tkinter.ttk import *
 import argparse
 import json
 import traceback
@@ -28,6 +32,32 @@ FAN = 'motor_speed'
 
 if __name__ == '__main__':
     config = None
+
+
+    def update_fan_speed():
+        fanb.configure(state=DISABLED)
+
+        try:
+            value = e.get()
+            value = int(value)
+            status = False
+
+            aws_client = AWSClient(root_logger)
+
+            aws_client.run_client(devices, FAN, value, status)
+            fanb.configure(state=NORMAL)
+
+        except Exception:
+            root_logger.exception('exception occurs during execution')
+
+
+    def check_connection():
+        value = None
+        status = True
+        aws_client = AWSClient(root_logger)
+        aws_client.run_client(devices, FAN, value, status)
+
+
     try:
         with open('config.json', 'r') as f:
             config = json.load(f)
@@ -39,16 +69,21 @@ if __name__ == '__main__':
         try:
             devices = config.get('devices')
 
-            parser = argparse.ArgumentParser()
-            parser.add_argument('--fan', required=False)
-            parser.add_argument('--status', required=False)
-            args = parser.parse_args()
-            aws_client = AWSClient(root_logger)
-            value = args.fan
-            status = args.status
-            aws_client.run_client(devices, FAN, value, status)
+            root = Tk()
+            root.geometry("620x400")
+            frm = Frame(root, padding=10)
+            frm.pack(fill="both", expand=True, padx=200, pady=20)
+            Label(frm, text="Enter Fan Speed").grid(column=0, row=0)
+            e = Entry(frm, foreground="blue")
+            e.grid(column=0, row=1, pady=20)
+            fanb = Button(frm, text="Enter", width=25, command=update_fan_speed)
+            fanb.grid(column=0, row=2)
+            Button(frm, text="Check connection status", width=25, command=check_connection).grid(column=0, row=3,
+                                                                                                 pady=10)
 
+            root.mainloop()
 
+        # aws_client.run_client(devices, FAN, value, status)
 
         except Exception:
             root_logger.exception('exception occurs during execution')
